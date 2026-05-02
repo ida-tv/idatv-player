@@ -3,17 +3,18 @@ export default async function handler(req, res) {
   if (!url) return res.status(400).send('No URL');
 
   try {
-    const response = await fetch(url);
-    const contentType = response.headers.get('content-type');
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
     
-    // Передаем заголовки, чтобы браузер понял, что это видео
-    res.setHeader('Content-Type', contentType || 'application/vnd.apple.mpegurl');
+    const contentType = response.headers.get('content-type');
+    res.setHeader('Content-Type', contentType || 'application/octet-stream');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-cache');
 
-    // Читаем данные как поток и отдаем в ответ
-    const blob = await response.arrayBuffer();
-    res.status(200).send(Buffer.from(blob));
+    const arrayBuffer = await response.arrayBuffer();
+    res.status(200).send(Buffer.from(arrayBuffer));
   } catch (error) {
-    res.status(500).send('Proxy error');
+    res.status(500).send('Proxy Error');
   }
 }
