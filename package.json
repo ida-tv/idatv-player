@@ -11,10 +11,10 @@
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "video.js": "^8.0.0",
+    "video.js": "latest",
     "hls.js": "latest",
     "iptv-playlist-parser": "latest",
-    "lucide-react": "latest",
-    "axios": "latest"
+    "framer-motion": "latest",
+    "lucide-react": "latest"
   }
 }
