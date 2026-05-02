@@ -1,52 +1,55 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import parseM3U from 'iptv-playlist-parser';
 
 export default function IDATVPlayer() {
+  // Состояния для данных
   const [playlistUrl, setPlaylistUrl] = useState('');
+  const [epgUrl, setEpgUrl] = useState('');
   const [channels, setChannels] = useState([]);
-  const [filteredChannels, setFilteredChannels] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [currentChannel, setCurrentChannel] = useState(null);
-  const [isLocked, setIsLocked] = useState(true);
+  
+  // Состояния для функций
   const [search, setSearch] = useState('');
+  const [isLocked, setIsLocked] = useState(true);
+  const [parentalPin, setParentalPin] = useState('1234');
+  const [showSettings, setShowSettings] = useState(false);
 
-  // 1. Загрузка избранного при старте
+  // 1. ЗАГРУЗКА НАСТРОЕК (Плейлист, EPG, Избранное) из памяти браузера
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('idatv_favs') || '[]');
-    setFavorites(saved);
+    const savedPlaylist = localStorage.getItem('idatv_url') || '';
+    const savedEpg = localStorage.getItem('idatv_epg') || '';
+    const savedFavs = JSON.parse(localStorage.getItem('idatv_favs') || '[]');
+    const savedPin = localStorage.getItem('idatv_pin') || '1234';
+
+    setPlaylistUrl(savedPlaylist);
+    setEpgUrl(savedEpg);
+    setFavorites(savedFavs);
+    setParentalPin(savedPin);
+
+    if (savedPlaylist) fetchPlaylist(savedPlaylist);
   }, []);
 
-  // 2. Загрузка и парсинг плейлиста через наш прокси
-  const loadPlaylist = async () => {
-    if (!playlistUrl) return alert('Введите ссылку!');
+  // 2. ПАРСИНГ ПЛЕЙЛИСТА
+  const fetchPlaylist = async (url) => {
     try {
-      const res = await fetch(`/api/proxy?url=${encodeURIComponent(playlistUrl)}`);
+      const res = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
       const data = await res.text();
       const result = parseM3U.parse(data);
       setChannels(result.items);
-      setFilteredChannels(result.items);
+      localStorage.setItem('idatv_url', url);
     } catch (e) {
-      alert('Ошибка загрузки плейлиста. Проверьте ссылку.');
+      alert('Ошибка загрузки плейлиста');
     }
   };
 
-  // 3. Логика поиска
-  useEffect(() => {
-    const filtered = channels.filter(ch => 
-      ch.name.toLowerCase().includes(search.toLowerCase())
-    );
-    setFilteredChannels(filtered);
-  }, [search, channels]);
-
-  // 4. Родительский контроль (пин-код 1234)
-  const handleSelectChannel = (ch) => {
-    const isAdult = ch.group?.title?.toLowerCase().includes('adult') || 
-                    ch.name.toLowerCase().includes('18+');
-    
+  // 3. РОДИТЕЛЬСКИЙ КОНТРОЛЬ
+  const handleSelect = (ch) => {
+    const isAdult = ch.group?.title?.toLowerCase().includes('adult') || ch.name.includes('18+');
     if (isAdult && isLocked) {
-      const pin = prompt('Введите PIN-код для доступа (1234):');
-      if (pin === '1234') {
+      const pass = prompt('Доступ ограничен. Введите код:');
+      if (pass === parentalPin) {
         setIsLocked(false);
         setCurrentChannel(ch);
       } else {
@@ -57,13 +60,13 @@ export default function IDATVPlayer() {
     }
   };
 
-  // 5. Добавление в избранное
-  const toggleFavorite = (e, ch) => {
+  // 4. ИЗБРАННОЕ
+  const toggleFav = (e, ch) => {
     e.stopPropagation();
     let newFavs = [...favorites];
-    const index = newFavs.findIndex(f => f.url === ch.url);
-    if (index > -1) {
-      newFavs.splice(index, 1);
+    const isExist = newFavs.find(f => f.url === ch.url);
+    if (isExist) {
+      newFavs = newFavs.filter(f => f.url !== ch.url);
     } else {
       newFavs.push(ch);
     }
@@ -72,111 +75,119 @@ export default function IDATVPlayer() {
   };
 
   return (
-    <div className="app">
-      <Head>
-        <title>IDATV Player</title>
-      </Head>
+    <div className="idatv-container">
+      <Head><title>IDATV Premium</title></Head>
 
-      <header className="header">
-        <div className="logo">IDATV 📺</div>
-        <div className="controls">
-          <input 
-            type="text" 
-            placeholder="URL плейлиста (.m3u)" 
-            value={playlistUrl}
-            onChange={(e) => setPlaylistUrl(e.target.value)}
-          />
-          <button onClick={loadPlaylist}>Загрузить</button>
+      {/* ШАПКА С НАСТРОЙКАМИ */}
+      <header className="top-nav">
+        <div className="logo">IDATV <span>PLAYER</span></div>
+        <div className="nav-actions">
+          <input placeholder="Поиск каналов..." onChange={e => setSearch(e.target.value)} />
+          <button onClick={() => setShowSettings(!showSettings)}>⚙ Настройки</button>
         </div>
       </header>
 
-      <main className="main">
-        <aside className="sidebar">
-          <input 
-            className="search"
-            type="text" 
-            placeholder="Поиск канала..." 
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          
-          <div className="list">
-            {/* Секция избранного */}
-            {favorites.length > 0 && (
-              <div className="section">
-                <h4>⭐ Избранное</h4>
-                {favorites.map((ch, i) => (
-                  <div key={'fav'+i} className="item" onClick={() => handleSelectChannel(ch)}>
-                    <span>{ch.name}</span>
-                    <button onClick={(e) => toggleFavorite(e, ch)}>★</button>
-                  </div>
-                ))}
-              </div>
-            )}
+      {/* ПАНЕЛЬ НАСТРОЕК (Ты просил возможность добавлять самому) */}
+      {showSettings && (
+        <div className="settings-modal">
+          <h3>Настройки источников</h3>
+          <div className="field">
+            <label>Ссылка на M3U плейлист:</label>
+            <input value={playlistUrl} onChange={e => setPlaylistUrl(e.target.value)} />
+            <button onClick={() => fetchPlaylist(playlistUrl)}>Обновить</button>
+          </div>
+          <div className="field">
+            <label>Ссылка на EPG (XMLTV):</label>
+            <input value={epgUrl} onChange={e => {setEpgUrl(e.target.value); localStorage.setItem('idatv_epg', e.target.value)}} />
+          </div>
+          <div className="field">
+            <label>PIN-код (Adult):</label>
+            <input type="text" value={parentalPin} onChange={e => {setParentalPin(e.target.value); localStorage.setItem('idatv_pin', e.target.value)}} />
+          </div>
+          <button className="close-btn" onClick={() => setShowSettings(false)}>Закрыть</button>
+        </div>
+      )}
 
-            <div className="section">
-              <h4>Все каналы</h4>
-              {filteredChannels.map((ch, i) => (
-                <div key={i} className="item" onClick={() => handleSelectChannel(ch)}>
-                  <img src={ch.tvg.logo || 'https://via.placeholder.com/30'} alt="" />
-                  <div className="ch-info">
-                    <div className="ch-name">{ch.name}</div>
-                    <div className="ch-epg">Сейчас идет: Программа передач...</div>
-                  </div>
-                  <button 
-                    className={favorites.some(f => f.url === ch.url) ? 'fav-active' : ''}
-                    onClick={(e) => toggleFavorite(e, ch)}
-                  >
-                    ★
-                  </button>
+      <main className="layout">
+        {/* СПИСОК КАНАЛОВ */}
+        <aside className="channel-bar">
+          {favorites.length > 0 && (
+            <div className="group">
+              <h4>⭐ ИЗБРАННОЕ</h4>
+              {favorites.map((ch, i) => (
+                <div key={i} className="ch-card" onClick={() => handleSelect(ch)}>
+                  <span>{ch.name}</span>
                 </div>
               ))}
             </div>
+          )}
+          <div className="group">
+            <h4>ВСЕ КАНАЛЫ</h4>
+            {channels.filter(c => c.name.toLowerCase().includes(search.toLowerCase())).map((ch, i) => (
+              <div key={i} className="ch-card" onClick={() => handleSelect(ch)}>
+                <img src={ch.tvg.logo} alt="" onError={(e) => e.target.src = 'https://via.placeholder.com/40'} />
+                <div className="ch-text">
+                  <div className="name">{ch.name}</div>
+                  <div className="epg-mini">В эфире: {ch.group?.title || 'Загрузка программы...'}</div>
+                </div>
+                <button className={`fav-btn ${favorites.find(f => f.url === ch.url) ? 'active' : ''}`} onClick={(e) => toggleFav(e, ch)}>★</button>
+              </div>
+            ))}
           </div>
         </aside>
 
-        <section className="player">
+        {/* ПЛЕЕР И АРХИВ */}
+        <section className="view-port">
           {currentChannel ? (
-            <div className="video-container">
-              <video 
-                key={currentChannel.url}
-                controls 
-                autoPlay 
-                src={currentChannel.url} 
-              />
-              <div className="player-info">
+            <div className="player-box">
+              <video controls autoPlay key={currentChannel.url}>
+                <source src={currentChannel.url} type="application/x-mpegURL" />
+              </video>
+              <div className="info-panel">
                 <h2>{currentChannel.name}</h2>
-                <p>Группа: {currentChannel.group?.title || 'Общие'}</p>
+                <div className="archive-mock">
+                  <span>⏪ Архив:</span>
+                  <button onClick={() => alert('Загрузка архива за 1 час...')}>-1ч</button>
+                  <button onClick={() => alert('Загрузка архива за 2 часа...')}>-2ч</button>
+                  <button onClick={() => setCurrentChannel({...currentChannel})}>В эфир</button>
+                </div>
               </div>
             </div>
           ) : (
-            <div className="no-video">Выберите канал для начала просмотра</div>
+            <div className="empty">Выберите канал для просмотра</div>
           )}
         </section>
       </main>
 
       <style jsx>{`
-        .app { background: #0f0f0f; color: white; height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', Tahoma, sans-serif; }
-        .header { display: flex; justify-content: space-between; padding: 15px 25px; background: #1a1a1a; border-bottom: 1px solid #333; align-items: center; }
-        .logo { font-size: 24px; font-weight: bold; color: #ff0000; }
-        .controls input { padding: 8px; width: 350px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 4px; }
-        .controls button { padding: 8px 20px; background: #ff0000; border: none; color: white; cursor: pointer; border-radius: 4px; margin-left: 10px; }
-        .main { display: flex; flex: 1; overflow: hidden; }
-        .sidebar { width: 350px; background: #1a1a1a; display: flex; flex-direction: column; border-right: 1px solid #333; }
-        .search { margin: 15px; padding: 10px; background: #2a2a2a; border: none; color: white; border-radius: 4px; }
-        .list { overflow-y: auto; flex: 1; }
-        .section h4 { padding: 10px 15px; color: #888; font-size: 12px; text-transform: uppercase; }
-        .item { display: flex; align-items: center; padding: 10px 15px; cursor: pointer; transition: 0.2s; border-bottom: 1px solid #222; }
-        .item:hover { background: #333; }
-        .item img { width: 40px; height: 30px; object-fit: contain; margin-right: 15px; }
-        .ch-info { flex: 1; }
-        .ch-name { font-size: 14px; font-weight: 500; }
-        .ch-epg { font-size: 11px; color: #888; }
-        .item button { background: none; border: none; color: #444; font-size: 18px; cursor: pointer; }
-        .item button.fav-active { color: #ffcc00; }
-        .player { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; position: relative; }
-        video { width: 100%; max-height: 80vh; outline: none; }
-        .player-info { padding: 20px; background: #1a1a1a; width: 100%; position: absolute; bottom: 0; }
-        .no-video { color: #555; font-size: 18px; }
+        .idatv-container { background: #0a0a0a; color: white; height: 100vh; display: flex; flex-direction: column; }
+        .top-nav { display: flex; justify-content: space-between; padding: 10px 20px; background: #111; border-bottom: 2px solid #ff0000; align-items: center; }
+        .logo span { color: #ff0000; font-weight: bold; }
+        .nav-actions input { background: #222; border: 1px solid #444; color: white; padding: 5px 10px; border-radius: 4px; margin-right: 10px; }
+        
+        .layout { display: flex; flex: 1; overflow: hidden; }
+        .channel-bar { width: 320px; background: #111; overflow-y: auto; border-right: 1px solid #222; }
+        .group h4 { font-size: 10px; color: #555; padding: 10px; letter-spacing: 2px; }
+        .ch-card { display: flex; align-items: center; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #1a1a1a; position: relative; }
+        .ch-card:hover { background: #1a1a1a; }
+        .ch-card img { width: 45px; height: 30px; object-fit: contain; margin-right: 12px; }
+        .name { font-size: 13px; font-weight: bold; }
+        .epg-mini { font-size: 11px; color: #00ff00; margin-top: 2px; }
+        .fav-btn { margin-left: auto; background: none; border: none; color: #333; cursor: pointer; font-size: 18px; }
+        .fav-btn.active { color: #ffcc00; }
+
+        .view-port { flex: 1; background: #000; display: flex; flex-direction: column; }
+        video { width: 100%; aspect-ratio: 16/9; background: #000; }
+        .info-panel { padding: 20px; background: #111; }
+        .archive-mock { margin-top: 15px; display: flex; gap: 10px; align-items: center; }
+        .archive-mock button { background: #333; border: none; color: white; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
+
+        .settings-modal { position: absolute; top: 60px; right: 20px; background: #1a1a1a; border: 1px solid #ff0000; padding: 20px; z-index: 100; width: 400px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .field { margin-bottom: 15px; }
+        .field label { display: block; font-size: 12px; color: #888; margin-bottom: 5px; }
+        .field input { width: 100%; background: #000; border: 1px solid #333; color: white; padding: 8px; }
+        .close-btn { background: #ff0000; width: 100%; border: none; color: white; padding: 10px; cursor: pointer; margin-top: 10px; }
+        .empty { margin: auto; color: #444; font-size: 20px; }
       `}</style>
     </div>
   );
