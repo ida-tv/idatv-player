@@ -1,0 +1,20 @@
+{
+  "name": "idatv-player",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "video.js": "^8.0.0",
+    "hls.js": "latest",
+    "iptv-playlist-parser": "latest",
+    "lucide-react": "latest",
+    "axios": "latest"
+  }
+}
